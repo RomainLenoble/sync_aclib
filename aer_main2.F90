@@ -1,0 +1,289 @@
+SUBROUTINE AER_MAIN2(YDCST_ACLIB, YPAER_ACLIB, YAEROSOLS, &
+            & YPCHEM_ACLIB, YCHEMS, &
+            & KIDIA, KFDIA, &
+            & KLUOUT, &
+            & KLON, KLEV, PTSTEP, PGELAT, &
+            & PAP, PAPH, PAPHI, PDELP, PTP, PVERVEL, PRH, &
+            & PLSM, &
+            & PLCVPFLX,PLSTPFLX,PSCVPFLX,PSSTPFLX , &
+            & PCLCOV, PCLWATL, PCLWATS, &
+            & PAER, PTENAER, &
+            & PCHEM2AER, PTENCHEM2AER, &
+            & YAEROUT_ACLIB )
+
+! INPUTS:
+! -------
+! KIDIA , KFDIA           : BEGIN/END of LON BLOCK
+! KLUOUT                  : UNIT OF OUTPUT FILE
+! KLON                    : NUMBER OF LONGITUDES / LATITUDES
+! KLEV                    : NUMBER OF VERTICAL LEVELS
+! PTSTEP                  : TIME STEP 
+! PGELAT                  : LATITUDE
+! PAP (KLON,KLEV)         : FULL-LEVEL PRESSURE           (Pa)
+! PAPH (KLON,0:KLEV)      : HALF-LEVEL PRESSURE           (Pa)
+! PAPHI(KLON,0:KLEV)      : GEOPOTENTIAL ON HALF-LEVELS 
+! PDELP (KLON,KLEV)       : DELTA PRESSURE                (Pa)
+! PTP(KLON,KLEV)          : FULL-LEVEL TEMPERATURE        (K)
+! PVERVEL(KLON,KLEV)      : FULL-LEVEL VERTICAL VELOCITY  (Pa s-1)
+! PRH(KLON,KLEV)          : RELATIVE HUMIDITY
+! PLSM(KLON)              : LAND-SEA MASK (note: treats lakes as sea)
+! PLCVPFLX(KLON,KLEV)     : LIQUID CONVECTIVE PRECIPITATION FLUX (kg.m-2.s-1)
+! PLSTPFLX(KLON,KLEV)     : LIQUID STRATIFORM PRECIPITATION FLUX (kg.m-2.s-1)
+! PSCVPFLX(KLON,KLEV)     : SOLID  CONVECTIVE PRECIPITATION FLUX (kg.m-2.s-1)
+! PSSTPFLX(KLON,KLEV)     : SOLID  STRATIFORM PRECIPITATION FLUX (kg.m-2.s-1)
+! PCLCOV(KLON,KLEV)       : CLOUD COVER                   (0-1)
+! PCLWATL(KLON,KLEV)      : LIQUID WATER CONTENT         (kg/kg)
+! PCLWATS(KLON,KLEV)      : SOLID  WATER CONTENT         (kg/kg)
+
+! INPUT/OUTPUT:
+! -------
+! PAER(KLON,KLEV,NAERO)    : AEROSOL CONCENTRATION
+! PTENAER(KLON,KLEV,NAERO) : AEROSOL TENDENCY
+! PCHEM2AER(KLON,KLEV,NCHEM2AER) : CHEMICAL CONCENTRATIONS TO BE USED FOR AEROSOL FORMATION
+! PTENCHEM2AER(KLON,KLEV,NCHEM2AER) : CHEMICAL TENDENCIES UPDATED FROM AEROSOL FORMATION
+! YAEROUT_ACLIB            : STRUCTURE FOR AEROSOL OUTPUT
+
+
+USE PARKIND1,             ONLY : JPIM     ,JPRB
+USE YOMHOOK,              ONLY : LHOOK,   DR_HOOK
+USE M_AER_ACLIB,          ONLY : AER_ACLIB
+USE MODD_CST_ACLIB,       ONLY : TCST_ACLIB
+USE MODD_PARAM_AER_ACLIB, ONLY : TPARAM_AER_ACLIB, TAEROSOL, TAEROUT_ACLIB
+USE MODD_PARAM_CHEM_ACLIB,ONLY : TPARAM_CHEM_ACLIB, TCHEM
+USE, INTRINSIC :: IEEE_ARITHMETIC
+
+IMPLICIT NONE
+
+TYPE(TCST_ACLIB),                            INTENT(IN)  :: YDCST_ACLIB
+TYPE(TPARAM_AER_ACLIB),                      INTENT(IN)  :: YPAER_ACLIB
+TYPE(TAEROSOL),DIMENSION(YPAER_ACLIB%NAERO),  INTENT(IN) :: YAEROSOLS
+TYPE(TPARAM_CHEM_ACLIB),                      INTENT(IN) :: YPCHEM_ACLIB
+TYPE(TCHEM),DIMENSION(YPAER_ACLIB%NCHEM2AER), INTENT(IN) :: YCHEMS
+INTEGER(KIND=JPIM),      INTENT(IN)  :: KIDIA , KFDIA 
+INTEGER(KIND=JPIM),      INTENT(IN)  :: KLUOUT
+INTEGER(KIND=JPIM),      INTENT(IN)  :: KLON , KLEV
+REAL(KIND=JPRB),         INTENT(IN)  :: PTSTEP
+REAL(KIND=JPRB),         INTENT(IN)  :: PGELAT(KLON)
+REAL(KIND=JPRB),         INTENT(IN)  :: PAP(KLON,KLEV)   
+REAL(KIND=JPRB),         INTENT(IN)  :: PAPH(KLON,0:KLEV)   
+REAL(KIND=JPRB),         INTENT(IN)  :: PAPHI(KLON,0:KLEV)   
+REAL(KIND=JPRB),         INTENT(IN)  :: PDELP(KLON,KLEV)   
+REAL(KIND=JPRB),         INTENT(IN)  :: PTP(KLON,KLEV)   
+REAL(KIND=JPRB),         INTENT(IN)  :: PVERVEL(KLON,KLEV)   
+REAL(KIND=JPRB),         INTENT(IN)  :: PRH(KLON,KLEV)   
+REAL(KIND=JPRB),         INTENT(IN)  :: PLSM(KLON) 
+REAL(KIND=JPRB),         INTENT(IN)  :: PLCVPFLX(KLON,0:KLEV)
+REAL(KIND=JPRB),         INTENT(IN)  :: PLSTPFLX(KLON,0:KLEV)
+REAL(KIND=JPRB),         INTENT(IN)  :: PSCVPFLX(KLON,0:KLEV)
+REAL(KIND=JPRB),         INTENT(IN)  :: PSSTPFLX(KLON,0:KLEV)
+REAL(KIND=JPRB),         INTENT(IN)  :: PCLCOV(KLON,KLEV) 
+REAL(KIND=JPRB),         INTENT(IN)  :: PCLWATL(KLON,KLEV)
+REAL(KIND=JPRB),         INTENT(IN)  :: PCLWATS(KLON,KLEV)
+
+REAL(KIND=JPRB),         INTENT(INOUT)  :: PAER(KLON,KLEV,YPAER_ACLIB%NAERO)   
+REAL(KIND=JPRB),         INTENT(INOUT)  :: PTENAER(KLON,KLEV,YPAER_ACLIB%NAERO)   
+REAL(KIND=JPRB),         INTENT(INOUT)  :: PCHEM2AER(KLON,KLEV,YPAER_ACLIB%NCHEM2AER)   
+REAL(KIND=JPRB),         INTENT(INOUT)  :: PTENCHEM2AER(KLON,KLEV,YPAER_ACLIB%NCHEM2AER)   
+TYPE(TAEROUT_ACLIB),     INTENT(INOUT)  :: YAEROUT_ACLIB
+
+
+REAL(KIND=JPRB) :: ZHOOK_HANDLE, val
+
+! Local variables
+INTEGER(KIND=JPIM)           :: JLEV,JLON, JAER
+INTEGER(KIND=JPIM)           :: IAER_S, IAER_E, INAER
+INTEGER(KIND=JPIM)           :: IDUMMY
+REAL(KIND=JPRB)              :: ZRHO(KLON,KLEV)
+REAL(KIND=JPRB)              :: ZDUMMY0(KLON),ZDUMMY1(KLON,KLEV)
+REAL(KIND=JPRB), ALLOCATABLE :: ZDUMMY2(:,:,:)  
+ 
+!------------------------------------------------------------------------------
+IF (LHOOK) CALL DR_HOOK('AER_MAIN2',0,ZHOOK_HANDLE)
+!------------------------------------------------------------------------------
+
+!!!!!!!!!!!!!!!!!!!!
+!! Initialisation !!
+!!!!!!!!!!!!!!!!!!!!
+
+   DO JLEV=1,KLEV
+     DO JLON=KIDIA,KFDIA
+       ZRHO(JLON,JLEV)=PAP(JLON,JLEV)/(YDCST_ACLIB%RRD*PTP(JLON,JLEV))
+
+      !  IF(ISNAN(PLCVPFLX(JLON, JLEV)))   print*, "aer-main2 not zero PLCVPFLX", PLCVPFLX(JLON, JLEV)
+      !  IF(ISNAN(PLSTPFLX(JLON, JLEV)))   print*, "aer-main2 not zero PLSTPFLX", PLSTPFLX(JLON, JLEV)
+      !  IF(ISNAN(PSCVPFLX(JLON, JLEV)))   print*, "aer-main2 not zero PSCVPFLX", PSCVPFLX(JLON, JLEV)
+      !  IF(ISNAN(PSSTPFLX(JLON, JLEV)))   print*, "aer-main2 not zero PSSTPFLX", PSSTPFLX(JLON, JLEV)
+      !  IF(PCLCOV(JLON, JLEV) /= 0.0 )   print*, "aer-main2 not zero PCLCOV", PCLCOV(JLON, JLEV)
+       
+      ENDDO
+   ENDDO
+
+
+!!!!!!!!!!!!!!!!!!!!!
+!! Transformation !!
+!!!!!!!!!!!!!!!!!!!!!
+
+   INAER = YPAER_ACLIB%NAERO
+
+   CALL AER_ACLIB( &
+        & YDCST_ACLIB, YPAER_ACLIB, YAEROSOLS, &
+        & "TRANSFO", YPAER_ACLIB%CTRANSFO_CODE, &
+        & KAERO=INAER, KMODE=0, KCHEM=YPAER_ACLIB%NCHEM2AER, &
+        & KAER_START=1, KIDIA=KIDIA, KFDIA=KFDIA, &
+        & KLUOUT=KLUOUT, KVERB=0, &
+        & KKA=IDUMMY, KKU=IDUMMY, KKL=-1, & 
+        & KLON=KLON, KLAT=1, KLEV=KLEV, PTSTEP=PTSTEP, &
+        & PAER=PAER, PTENAER=PTENAER, &
+        & YAEROUT_ACLIB=YAEROUT_ACLIB, &
+        & YPCHEM_ACLIB=YPCHEM_ACLIB, YCHEMS=YCHEMS(1:YPAER_ACLIB%NCHEM2AER), &
+        & PGELAT=PGELAT, PAP=PAP, PAPH=PAPH, PDELP=PDELP, PTP=PTP, &
+        & PVERVEL=PVERVEL, PRH=PRH, PRHODREF=ZRHO, &
+        & PCLCOV=PCLCOV, PCLWATL=PCLWATL, &
+        & PCHEM=PCHEM2AER, PTENCHEM=PTENCHEM2AER &
+        & )
+
+
+!!!!!!!!!!!!!!!!!!!!!
+!! Scavenging !!
+!!!!!!!!!!!!!!!!!!!!!
+
+   ! Dust family
+   IF (YPAER_ACLIB%LDUSTON) THEN
+       IAER_S = YPAER_ACLIB%NDUST_F0
+       IAER_E = YPAER_ACLIB%NDUST_F1
+       INAER = IAER_E - IAER_S + 1
+       ALLOCATE(ZDUMMY2(KLON,KLEV,INAER))
+
+       CALL AER_ACLIB( & 
+            & YDCST_ACLIB, YPAER_ACLIB, YAEROSOLS(IAER_S:IAER_E), &
+            & "SCAV", YPAER_ACLIB%CDUST_SCAV_CODE, &
+            & KAERO=INAER, KMODE=0, KCHEM=0, &
+            & KAER_START=IAER_S, KIDIA=KIDIA, KFDIA=KFDIA, &
+            & KLUOUT=KLUOUT, KVERB=0, &
+            & KKA=IDUMMY, KKU=IDUMMY, KKL=-1, & 
+            & KLON=KLON, KLAT=1, KLEV=KLEV, PTSTEP=PTSTEP, &
+            & PAER=PAER(:,:,IAER_S:IAER_E), &
+            & PTENAER=PTENAER(:,:,IAER_S:IAER_E), &
+            & YAEROUT_ACLIB=YAEROUT_ACLIB, &
+            & CDMNH_PROGRAM="", PAP=PAP, PAPH=PAPH, PDELP=PDELP, PDZZ=ZDUMMY1, PTP=PTP, &
+            & PVERVEL=PVERVEL, PRHODREF=ZRHO, &
+            & PEVAP3D=ZDUMMY1, PVMASSMIN=ZDUMMY2, PRGAER=ZDUMMY2, &
+            & PLSM=PLSM, PTOWN=ZDUMMY0, &
+            & PLCVPFLX=PLCVPFLX, PLSTPFLX=PLSTPFLX, PSCVPFLX=PSCVPFLX, PSSTPFLX=PSSTPFLX, PSURF=ZDUMMY0, &
+            & PCLCOV=PCLCOV, PCLWATL=PCLWATL, PCLWATS=PCLWATS, &
+            & PCCT=ZDUMMY1, PCRT=ZDUMMY1 &
+            & )
+
+       DEALLOCATE(ZDUMMY2)
+   ENDIF
+
+   ! Sea-salt family
+   IF (YPAER_ACLIB%LSALTON) THEN
+       IAER_S = YPAER_ACLIB%NSALT_F0
+       IAER_E = YPAER_ACLIB%NSALT_F1
+       INAER = IAER_E - IAER_S + 1
+       ALLOCATE(ZDUMMY2(KLON,KLEV,INAER))
+
+       CALL AER_ACLIB( & 
+            & YDCST_ACLIB, YPAER_ACLIB, YAEROSOLS(IAER_S:IAER_E), &
+            & "SCAV", YPAER_ACLIB%CSALT_SCAV_CODE, &
+            & KAERO=INAER, KMODE=0, KCHEM=0, &
+            & KAER_START=IAER_S, KIDIA=KIDIA, KFDIA=KFDIA, &
+            & KLUOUT=KLUOUT, KVERB=0, &
+            & KKA=IDUMMY, KKU=IDUMMY, KKL=-1, & 
+            & KLON=KLON, KLAT=1, KLEV=KLEV, PTSTEP=PTSTEP, &
+            & PAER=PAER(:,:,IAER_S:IAER_E), &
+            & PTENAER=PTENAER(:,:,IAER_S:IAER_E), &
+            & YAEROUT_ACLIB=YAEROUT_ACLIB, &
+            & CDMNH_PROGRAM="", PAP=PAP, PAPH=PAPH, PDELP=PDELP, PDZZ=ZDUMMY1, PTP=PTP, &
+            & PVERVEL=PVERVEL, PRHODREF=ZRHO, &
+            & PEVAP3D=ZDUMMY1, PVMASSMIN=ZDUMMY2, PRGAER=ZDUMMY2, & 
+            & PLSM=PLSM, PTOWN=ZDUMMY0, &
+            & PLCVPFLX=PLCVPFLX, PLSTPFLX=PLSTPFLX, PSCVPFLX=PSCVPFLX, PSSTPFLX=PSSTPFLX, PSURF=ZDUMMY0, &
+            & PCLCOV=PCLCOV, PCLWATL=PCLWATL, PCLWATS=PCLWATS, &
+            & PCCT=ZDUMMY1, PCRT=ZDUMMY1 &
+            & )
+
+       DEALLOCATE(ZDUMMY2)
+   ENDIF
+
+   ! Anthropogenic family
+   IF (YPAER_ACLIB%LANTHON) THEN
+       IAER_S = YPAER_ACLIB%NANTH_F0
+       IAER_E = YPAER_ACLIB%NANTH_F1
+       INAER = IAER_E - IAER_S + 1
+       ALLOCATE(ZDUMMY2(KLON,KLEV,INAER))
+
+       CALL AER_ACLIB( & 
+            & YDCST_ACLIB, YPAER_ACLIB, YAEROSOLS(IAER_S:IAER_E), &
+            & "SCAV", YPAER_ACLIB%CANTH_SCAV_CODE, &
+            & KAERO=INAER, KMODE=0, KCHEM=0, &
+            & KAER_START=IAER_S, KIDIA=KIDIA, KFDIA=KFDIA, &
+            & KLUOUT=KLUOUT, KVERB=0, &
+            & KKA=IDUMMY, KKU=IDUMMY, KKL=-1, & 
+            & KLON=KLON, KLAT=1, KLEV=KLEV, PTSTEP=PTSTEP, &
+            & PAER=PAER(:,:,IAER_S:IAER_E), &
+            & PTENAER=PTENAER(:,:,IAER_S:IAER_E), &
+            & YAEROUT_ACLIB=YAEROUT_ACLIB, &
+            & CDMNH_PROGRAM="", PAP=PAP, PAPH=PAPH, PDELP=PDELP, PDZZ=ZDUMMY1, PTP=PTP, &
+            & PVERVEL=PVERVEL, PRHODREF=ZRHO, &
+            & PEVAP3D=ZDUMMY1, PVMASSMIN=ZDUMMY2, PRGAER=ZDUMMY2, &
+            & PLSM=PLSM, PTOWN=ZDUMMY0, &
+            & PLCVPFLX=PLCVPFLX, PLSTPFLX=PLSTPFLX, PSCVPFLX=PSCVPFLX, PSSTPFLX=PSSTPFLX, PSURF=ZDUMMY0, &
+            & PCLCOV=PCLCOV, PCLWATL=PCLWATL, PCLWATS=PCLWATS, &
+            & PCCT=ZDUMMY1, PCRT=ZDUMMY1 &
+            & )
+
+       DEALLOCATE(ZDUMMY2)
+   ENDIF
+
+   ! Check nan 
+
+
+DO JLEV=1,KLEV
+     DO JLON=KIDIA,KFDIA
+       DO JAER=1, YPAER_ACLIB%NAERO
+   
+          val = PAER(JLON,JLEV,JAER)
+   
+          ! Check NaN or Inf
+          IF (.NOT. IEEE_IS_FINITE(val)) THEN
+            PRINT *, "Aer_main2 NaN/Inf detected in PAER at:", JLON,JLEV,JAER, val
+          END IF
+   
+          ! Check absurd values (adjust threshold!)
+          IF (ABS(val) > 1.E10) THEN
+            PRINT *, "Aer_main2 Huge value in PAER at:", JLON,JLEV,JAER, val
+          END IF
+          IF (val < 0.) THEN
+              PRINT *, "Aer_main2 Negative aerosol in PAER at:", JLON,JLEV,JAER,val
+            END IF
+        END DO
+      END DO
+    END DO
+   
+    DO JLEV=1,KLEV
+     DO JLON=KIDIA,KFDIA
+       DO JAER=1, YPAER_ACLIB%NAERO
+   
+          val = PTENAER(JLON,JLEV,JAER)
+   
+          ! Check NaN or Inf
+          IF (.NOT. IEEE_IS_FINITE(val)) THEN
+            PRINT *, "Aer_main2 NaN/Inf detected in PTENAER at:", JLON,JLEV,JAER, val
+          END IF
+   
+          ! Check absurd values (adjust threshold!)
+          IF (ABS(val) > 1.E10) THEN
+            PRINT *, "Aer_main2 Huge value in PTENAER at:", JLON,JLEV,JAER, val
+          END IF
+        END DO
+      END DO
+    END DO
+   
+   
+
+!------------------------------------------------------------------------------
+IF (LHOOK) CALL DR_HOOK('AER_MAIN2',1,ZHOOK_HANDLE)    
+!------------------------------------------------------------------------------
+END SUBROUTINE AER_MAIN2
